@@ -20,6 +20,7 @@
 #include <rapidjson/writer.h>
 #include <sstream>
 #include <sys/stat.h>
+#include <unordered_set>
 #include <sys/types.h>
 
 namespace Discord {
@@ -731,20 +732,27 @@ void DiscordClient::handleReady(const rapidjson::Value &d) {
 		connectionCallback();
 	}
 
+	const int MAX_GUILD_COUNT = 30;
+	std::unordered_set<std::string> visitedGuilds;
+
 	if (d.HasMember("guilds") && d["guilds"].IsArray()) {
 		const rapidjson::Value &guildsArr = d["guilds"];
-		Logger::log("[Gateway] Parsing %u guilds...", guildsArr.Size());
-		setStatus(Core::I18n::getInstance().get("login.status.loading_guilds") + " (0/" +
-		          std::to_string(guildsArr.Size()) + ")...");
 
-		for (rapidjson::SizeType i = 0; i < guildsArr.Size(); i++) {
+		size_t limit = std::min<size_t>(guildsArr.Size(), MAX_GUILD_COUNT);
+
+		Logger::log("[Gateway] Parsing %u guilds...", limit);
+		setStatus(Core::I18n::getInstance().get("login.status.loading_guilds") + " (0/" +
+		          std::to_string(limit) + ")...");
+
+		for (rapidjson::SizeType i = 0; i < limit; i++) {
 			setStatus(Core::I18n::getInstance().get("login.status.loading_guilds") + " (" + std::to_string(i) + "/" +
-			          std::to_string(guildsArr.Size()) + ")...");
+			          std::to_string(limit) + ")...");
 
 			const rapidjson::Value &gObj = guildsArr[i];
 			Guild guild;
 			parseGuildObject(gObj, guild, newCurrentUser.id);
 			newGuilds.push_back(std::move(guild));
+			visitedGuilds.insert(guild.id);
 		}
 	}
 
@@ -782,7 +790,7 @@ void DiscordClient::handleReady(const rapidjson::Value &d) {
 				if (folderObj.HasMember("guild_ids") && folderObj["guild_ids"].IsArray()) {
 					const rapidjson::Value &ids = folderObj["guild_ids"];
 					for (rapidjson::SizeType j = 0; j < ids.Size(); j++) {
-						if (ids[j].IsString()) {
+						if (ids[j].IsString() && !(visitedGuilds.find(ids[j].GetString()) == visitedGuilds.end())) {
 							std::string gid = ids[j].GetString();
 							folder.guildIds.push_back(gid);
 							sortOrder.push_back(gid);
